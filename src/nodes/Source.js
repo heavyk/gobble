@@ -1,6 +1,7 @@
 import { basename, relative, resolve } from 'path';
-import { link, linkSync, mkdirSync, statSync, Promise } from 'sander';
-import { watch } from 'chokidar';
+import { link, linkSync, mkdirSync, statSync, Promise, lsr } from 'sander';
+// import { watch } from 'chokidar';
+import watch from 'navelgazer';
 import * as debounce from 'debounce';
 import Node from './Node';
 import uid from '../utils/uid';
@@ -77,7 +78,8 @@ export default class Source extends Node {
 
 				change.type === 'add'    && ( change.added = true );
 				change.type === 'change' && ( change.changed = true );
-				change.type === 'unlink' && ( change.removed = true );
+				change.type === 'delete' && ( change.removed = true );
+				change.type === 'rename' && ( change.renamed = true );
 
 				return result;
 			});
@@ -86,38 +88,58 @@ export default class Source extends Node {
 			changes = [];
 		}, 100 );
 
+		const _watch = ( err, type, path ) => {
+			// console.log('evt:', arguments)
+			changes.push({ type, path });
+			relay();
+		}
+
 		const options = {
 			persistent: true,
 			ignoreInitial: true,
 			useFsEvents: false // see https://github.com/paulmillr/chokidar/issues/146
 		};
 
-		this._watcher = watch( this.dir, options );
-
-		[ 'add', 'change', 'unlink' ].forEach( type => {
-			this._watcher.on( type, path => {
-				changes.push({ type, path });
-				relay();
+		// this._watcher = watch( this.dir, options );
+		if ( this.dir ) {
+			lsr( this.dir ).then( files => {
+				// console.log('files', files)
+				files.forEach( f => {
+					watch( f, _watch );
+				})
 			});
-		});
+		}
+
+		// [ 'add', 'change', 'unlink' ].forEach( type => {
+		// 	this._watcher.on( type, path => {
+		// 		changes.push({ type, path });
+		// 		relay();
+		// 	});
+		// });
 
 		if ( this.file ) {
-			this._fileWatcher = watch( this.file, options );
-
-			this._fileWatcher.on( 'change', () => {
-				link( this.file ).to( this.targetFile );
+			watch( this.file, ( err, evt, path ) => {
+				console.log('file:', arguments)
+				if ( evt === 'change' ) link( this.file ).to( this.targetFile );
+			}, watcher => {
+				this._fileWatcher = watcher;
 			});
+
+			// this._fileWatcher.on( 'change', () => {
+			// 	link( this.file ).to( this.targetFile );
+			// });
 		}
 	}
 
 	stop () {
-		if ( this._watcher ) {
-			this._watcher.close();
-		}
+		// if ( this._watcher ) {
+		// 	this._watcher.close();
+		// }
+		watch.closeAll();
 
-		if ( this._fileWatcher ) {
-			this._fileWatcher.close();
-		}
+		// if ( this._fileWatcher ) {
+		// 	this._fileWatcher.close();
+		// }
 
 		this._active = false;
 	}
