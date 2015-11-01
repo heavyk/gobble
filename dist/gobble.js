@@ -2192,48 +2192,51 @@ var Source = (function (_Node) {
 			sander.linkSync(this.file).to(this.targetFile);
 		}
 
-		var changes = [];
+		var changed = {};
 
 		var relay = debounce(function () {
-			_this2.changes = changes.map(function (change) {
-				var result = {
-					file: path.relative(_this2.dir, change.path)
-				};
+			var changes = [];
 
-				change.type === 'add' && (change.added = true);
-				change.type === 'change' && (change.changed = true);
-				change.type === 'unlink' && (change.removed = true);
+			Object.keys(changed).forEach(function (path$$) {
+				var type = changed[path$$];
+				var change = { type: type, file: path.relative(_this2.dir, path$$) };
 
-				return result;
+				type === 'add' && (change.added = true);
+				type === 'change' && (change.changed = true);
+				type === 'unlink' && (change.removed = true);
+
+				changes.push(change);
 			});
 
-			_this2.emit('invalidate', changes);
-			changes = [];
+			_this2.emit('invalidate', _this2.changes = changes);
+			changed = {};
 		}, 100);
 
 		if (this.dir) {
 			(function () {
 				_this2._dir = new pathwatcher.Directory(_this2.dir);
-				var processDirEntries = function processDirEntries(err, entries) {
+				var processDirEntries = function processDirEntries(err, entries, initial) {
 					if (err) throw err;
+
 					entries.forEach(function (entry) {
+						if (_this2._entries[entry.path]) return;else if (!initial) {
+							changed[entry.path] = 'add';
+							relay();
+						}
+
+						_this2._entries[entry.path] = entry;
+
 						if (entry instanceof pathwatcher.File) {
-							if (!_this2._entries[entry.path]) {
-								changes.push({ type: 'add', path: entry.path });
-							}
-
-							_this2._entries[entry.path] = entry;
-
 							entry.onDidChange(function () {
-								changes.push({ type: 'change', path: entry.path });
+								changed[entry.path] = 'change';
 								relay();
 							});
 
 							var doDelete = function doDelete() {
-								changes.push({ type: 'unlink', path: entry.path });
-								relay();
 								_this2._entries[entry.path].unsubscribeFromNativeChangeEvents();
-								delete _this2._entries[entry.path];
+								_this2._entries[entry.path] = null;
+								changed[entry.path] = 'unlink';
+								relay();
 							};
 
 							entry.onDidDelete(doDelete);
@@ -2242,17 +2245,21 @@ var Source = (function (_Node) {
 							entry.onDidChange(function () {
 								entry.getEntries(processDirEntries);
 							});
+
+							entry.getEntries(function (err, entries) {
+								processDirEntries(err, entries, initial);
+							});
 						}
 					});
 				};
 
 				_this2._dir.getEntries(processDirEntries);
-				processDirEntries(null, [_this2._dir]);
+				processDirEntries(null, [_this2._dir], true);
 			})();
 		}
 
 		if (this.file) {
-			this._fileWatcher = pathwatcher.watch(this.file, function (event) {
+			this._fileWatcher = pathwatcher.watch(this.file, function (type) {
 				if (type === 'change') sander.link(_this2.file).to(_this2.targetFile);
 			});
 		}
@@ -2262,9 +2269,9 @@ var Source = (function (_Node) {
 		var _this3 = this;
 
 		if (this._dir) {
-			Object.keys(this._entries).forEach(function (path) {
-				_this3._entries[path].unsubscribeFromNativeChangeEvents();
-				delete _this3._entries[path];
+			Object.keys(this._entries).forEach(function (path$$) {
+				_this3._entries[path$$].unsubscribeFromNativeChangeEvents();
+				delete _this3._entries[path$$];
 			});
 			this._dir.unsubscribeFromNativeChangeEvents();
 			this._dir = null;
