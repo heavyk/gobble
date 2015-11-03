@@ -21,7 +21,7 @@
     "require-relative": "~0.8.7",
     "resolve": "^1.1.6",
     "rimraf": "~2.4.3",
-    "sander": "^0.3.8",
+    "sander": "github:heavyk/sander#stable",
     "sorcery": "^0.6.3",
     "source-map-support": "^0.3.2",
     "tiny-lr": "~0.2.0"
